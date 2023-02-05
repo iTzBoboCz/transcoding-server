@@ -16,10 +16,11 @@ tempfile = "3.3.0"
 blurhash = "0.1.1"
 todo-or-die = { version = "0.1.2", features = ["github"] }
 serde = "1.0.152"
+image = "0.24.5"
 
 # Transcoding
 ffmpeg-cli = "0.1.0"
-magick_rust = "0.17.0"
+magick_rust = { version = "0.17.0", optional = true }
 
 # Logging
 metrics = "0.18"
@@ -37,3 +38,7 @@ aide = { version = "0.9.0", features = [
 axum-jsonschema = { version = "0.5.0", features = [
     "aide",
 ] }
+
+[features]
+default = ["imagemagick"]
+imagemagick = ["dep:magick_rust"]

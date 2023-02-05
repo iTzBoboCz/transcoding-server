@@ -4,6 +4,7 @@ use magick_rust::{bindings, magick_wand_genesis, MagickWand, PixelWand, Resource
 use magick_rust::{MagickError, ToMagick};
 use std::path::Path;
 use std::sync::Once;
+use tracing::{error, warn};
 
 #[derive(Default)]
 pub enum SupportedImageFormats {
@@ -32,10 +33,11 @@ pub async fn lower_bitrate(
 ) -> Result<tempfile::NamedTempFile, StatusCode> {
     let wand = init();
 
-    wand.read_image(
-        path.to_str()
-            .ok_or_else(|| StatusCode::INTERNAL_SERVER_ERROR)?,
-    );
+    let read = wand.read_image(path.to_str().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?);
+
+    if read.is_err() {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
     let height = wand.get_image_height();
     let width = wand.get_image_width();

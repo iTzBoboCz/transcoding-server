@@ -12,6 +12,7 @@ use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+#[cfg(feature = "imagemagick")]
 mod imagemagick;
 mod routes;
 
@@ -28,7 +29,9 @@ async fn main() {
 
     // build our application with a route
     let app = Router::new()
-        .route("/", post(routes::root))
+        .route("/img", post(routes::root))
+        // .route("/img/info", post(routes::img_info))
+        .route("/img/blurhash", post(routes::img_blurhash))
         .route("/metrics", get(move || ready(recorder_handle.render())))
         .route_layer(middleware::from_fn(track_metrics))
         .layer(TraceLayer::new_for_http());

@@ -7,11 +7,14 @@ use axum::{
     response::IntoResponse,
 };
 use ffmpeg_cli::FfmpegBuilder;
+use image::GenericImageView;
 use infer::{MatcherType, Type};
 use serde::{Deserialize, Serialize};
+use tokio::fs;
 use tokio_util::io::ReaderStream;
-use tracing::log::warn;
+use tracing::{error, log::warn};
 
+#[cfg(feature = "imagemagick")]
 use crate::imagemagick::{get_dimensions, lower_bitrate};
 
 // Path((user_id, team_id)): Path<(Uuid, Uuid)>,
@@ -23,7 +26,6 @@ enum ImageFormats {
     Jp2,
     #[default]
     Jpg,
-    Json,
     Jxr,
     Pjpg,
     Mp4,
@@ -32,7 +34,6 @@ enum ImageFormats {
     Png32,
     Webm,
     Webp,
-    Blurhash,
 }
 
 impl ImageFormats {
@@ -42,7 +43,6 @@ impl ImageFormats {
             Self::Gif => true,
             Self::Jp2 => true,
             Self::Jpg => true,
-            Self::Json => false,
             Self::Jxr => true,
             Self::Pjpg => true,
             Self::Mp4 => true,
@@ -51,7 +51,6 @@ impl ImageFormats {
             Self::Png32 => true,
             Self::Webm => true,
             Self::Webp => true,
-            Self::Blurhash => false,
         }
     }
 
@@ -90,9 +89,6 @@ pub async fn root(
         return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
 
-    // if  infer::Infer::is_supported() {}
-
-    warn!("{:?}", tmp_file.path());
     let Some(tmp_file_path) = tmp_file.path().to_str() else {
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     };
@@ -104,38 +100,35 @@ pub async fn root(
     let Some(output_path) = output.path().to_str() else {
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     };
-
-    if let Some(f) = format {
-        if matches!(f, ImageFormats::Blurhash) {}
-    }
+    // g(tmp_file.path());
 
     // let d = lower_bitrate(tmp_file.path()).await;
     // warn!("{:?}", d);
 
-    let ffmpeg_builder = FfmpegBuilder::new()
-        .input(ffmpeg_cli::File::new(tmp_file_path))
-        .output(
-            ffmpeg_cli::File::new(output_path), // .option(Parameter::KeyValue("vcodec", "libx265"))
-                                                // .option(Parameter::KeyValue("crf", "28")),
-        );
+    // let ffmpeg_builder = FfmpegBuilder::new()
+    //     .input(ffmpeg_cli::File::new(tmp_file_path))
+    //     .output(
+    //         ffmpeg_cli::File::new(output_path), // .option(Parameter::KeyValue("vcodec", "libx265"))
+    //                                             // .option(Parameter::KeyValue("crf", "28")),
+    //     );
 
-    let Ok(ffmpeg) = ffmpeg_builder.run().await else {
-        return Err(StatusCode::UNPROCESSABLE_ENTITY);
-    };
+    // let Ok(ffmpeg) = ffmpeg_builder.run().await else {
+    //     return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    // };
 
-    let Ok(f) = ffmpeg.process.wait_with_output() else {
-        return Err(StatusCode::UNPROCESSABLE_ENTITY);
-    };
+    // let Ok(f) = ffmpeg.process.wait_with_output() else {
+    //     return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    // };
 
-    warn!("haha");
+    // warn!("haha");
 
-    if !f.status.success() {
-        return Err(StatusCode::UNPROCESSABLE_ENTITY);
-    }
+    // if !f.status.success() {
+    //     return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    // }
 
-    warn!("{}", f.status);
+    // warn!("{}", f.status);
 
-    get_stream(output.path()).await
+    get_stream(tmp_file.path()).await
 }
 
 async fn get_file(
@@ -159,10 +152,15 @@ async fn get_file(
         .suffix(&format!(".{}", file_type.extension()))
         .tempfile();
 
-    match file {
-        Ok(f) => Ok((f, file_type.matcher_type())),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
+    let Ok(f) = file else {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+
+    if fs::copy(tmp_file.path(), f.path()).await.is_err() {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+
+    Ok((f, file_type.matcher_type()))
 }
 
 async fn get_stream(path: &Path) -> Result<StreamBody<ReaderStream<tokio::fs::File>>, StatusCode> {
@@ -176,3 +174,51 @@ async fn get_stream(path: &Path) -> Result<StreamBody<ReaderStream<tokio::fs::Fi
     // convert the `Stream` into an `axum::body::HttpBody`
     Ok(StreamBody::new(stream))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct ImageBlurhashQuery {
+    components_x: Option<usize>,
+    components_y: Option<usize>,
+}
+
+pub async fn img_blurhash(
+    Query(ImageBlurhashQuery {
+        components_x,
+        components_y,
+    }): Query<ImageBlurhashQuery>,
+    mut multipart: Multipart,
+) -> Result<String, StatusCode> {
+    let (tmp_file, _) = get_file(multipart).await?;
+
+    let Ok(img) = image::open(tmp_file.path()) else {
+        error!("test");
+        return Err(StatusCode::IM_A_TEAPOT);
+    };
+
+    // if components_x.is_some()
+
+    let (width, height) = img.dimensions();
+
+    let x = match components_x {
+        Some(x) => x as u32,
+        None => width / 50,
+    };
+
+    let y = match components_y {
+        Some(y) => y as u32,
+        None => width / 50,
+    };
+
+    error!("{} - {}", x, y);
+
+    // FIXME: Doesn't seem possible to get rgba from ImageMagick
+    Ok(blurhash::encode(
+        4,
+        3,
+        width,
+        height,
+        &img.into_rgba8().into_vec(),
+    ))
+}
+
+// async fn img_info() -> Result<Json, StatusCode> {}
