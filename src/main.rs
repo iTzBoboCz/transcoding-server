@@ -29,9 +29,8 @@ async fn main() {
 
     // build our application with a route
     let app = Router::new()
-        .route("/img", post(routes::root))
+        .route("/", post(routes::root))
         // .route("/img/info", post(routes::img_info))
-        .route("/img/blurhash", post(routes::img_blurhash))
         .route("/metrics", get(move || ready(recorder_handle.render())))
         .route_layer(middleware::from_fn(track_metrics))
         .layer(TraceLayer::new_for_http());

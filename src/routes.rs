@@ -7,67 +7,23 @@ use axum::{
     response::IntoResponse,
 };
 use ffmpeg_cli::FfmpegBuilder;
-use image::GenericImageView;
 use infer::{MatcherType, Type};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use tokio_util::io::ReaderStream;
 use tracing::{error, log::warn};
 
-#[cfg(feature = "imagemagick")]
-use crate::imagemagick::{get_dimensions, lower_bitrate};
-
-// Path((user_id, team_id)): Path<(Uuid, Uuid)>,
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-enum ImageFormats {
-    Avif,
-    Gif,
-    Jp2,
-    #[default]
-    Jpg,
-    Jxr,
-    Pjpg,
-    Mp4,
-    Png,
-    Png8,
-    Png32,
-    Webm,
-    Webp,
-}
-
-impl ImageFormats {
-    pub fn quality_available(self) -> bool {
-        match self {
-            Self::Avif => true,
-            Self::Gif => true,
-            Self::Jp2 => true,
-            Self::Jpg => true,
-            Self::Jxr => true,
-            Self::Pjpg => true,
-            Self::Mp4 => true,
-            Self::Png => true,
-            Self::Png8 => true,
-            Self::Png32 => true,
-            Self::Webm => true,
-            Self::Webp => true,
-        }
-    }
-
-    // pub fn
-}
-
-// Change quality to range if possible
-todo_or_die::issue_closed!("rust-lang", "rfcs", 671);
+#[derive(Debug, Serialize, Deserialize)]
+enum AudioVisualFormats {}
 
 #[derive(Debug, Deserialize)]
-pub struct ImageQuery {
-    format: Option<ImageFormats>,
+pub struct AudioVisualQuery {
+    format: Option<AudioVisualFormats>,
     /// By default, the value is ImageMagick's [default convert -quality](https://imagemagick.org/script/command-line-options.php#quality)
     quality: Option<u8>,
 }
 
-impl Default for ImageQuery {
+impl Default for AudioVisualQuery {
     fn default() -> Self {
         Self {
             format: Default::default(),
@@ -77,15 +33,12 @@ impl Default for ImageQuery {
 }
 
 pub async fn root(
-    Query(ImageQuery { format, quality }): Query<ImageQuery>,
+    Query(AudioVisualQuery { format, quality }): Query<AudioVisualQuery>,
     mut multipart: Multipart,
 ) -> Result<StreamBody<ReaderStream<tokio::fs::File>>, StatusCode> {
     let (tmp_file, matcher_type) = get_file(multipart).await?;
 
-    if !matches!(
-        matcher_type,
-        MatcherType::Audio | MatcherType::Image | MatcherType::Video
-    ) {
+    if !matches!(matcher_type, MatcherType::Audio | MatcherType::Video) {
         return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
 
@@ -174,51 +127,3 @@ async fn get_stream(path: &Path) -> Result<StreamBody<ReaderStream<tokio::fs::Fi
     // convert the `Stream` into an `axum::body::HttpBody`
     Ok(StreamBody::new(stream))
 }
-
-#[derive(Debug, Deserialize)]
-pub struct ImageBlurhashQuery {
-    components_x: Option<usize>,
-    components_y: Option<usize>,
-}
-
-pub async fn img_blurhash(
-    Query(ImageBlurhashQuery {
-        components_x,
-        components_y,
-    }): Query<ImageBlurhashQuery>,
-    mut multipart: Multipart,
-) -> Result<String, StatusCode> {
-    let (tmp_file, _) = get_file(multipart).await?;
-
-    let Ok(img) = image::open(tmp_file.path()) else {
-        error!("test");
-        return Err(StatusCode::IM_A_TEAPOT);
-    };
-
-    // if components_x.is_some()
-
-    let (width, height) = img.dimensions();
-
-    let x = match components_x {
-        Some(x) => x as u32,
-        None => width / 50,
-    };
-
-    let y = match components_y {
-        Some(y) => y as u32,
-        None => width / 50,
-    };
-
-    error!("{} - {}", x, y);
-
-    // FIXME: Doesn't seem possible to get rgba from ImageMagick
-    Ok(blurhash::encode(
-        4,
-        3,
-        width,
-        height,
-        &img.into_rgba8().into_vec(),
-    ))
-}
-
-// async fn img_info() -> Result<Json, StatusCode> {}
